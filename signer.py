@@ -8,7 +8,8 @@ from Crypto.Cipher import AES
 from Crypto.PublicKey import RSA 
 from Crypto.Signature import PKCS1_v1_5 
 from Crypto.Hash import SHA512
-from base64 import b64encode, b64decode 
+from base64 import b64encode, b64decode
+from binascii import unhexlify
 
 ##################################################
 # Loads the RSA key object from the location
@@ -44,7 +45,11 @@ def loadKey(keyPath):
 def digSig(sigKey, string):
 	
 	# TODO: return the signature of the file
-	signature = sigKey.sign(string, '')
+	try:
+		signature = sigKey.sign(string, '')
+	except:
+		print("Cannot sign with public key")
+		exit(42)
 	return signature
 
 ##########################################################
@@ -65,8 +70,7 @@ def getFileSig(fileName, privKey):
 	with open(fileName, "r") as file:
 		fileContents = file.read()
 		dataHash = SHA512.new(fileContents).hexdigest()
-		key = loadKey(privKey)
-		signedHash = digSig(key, dataHash)
+		signedHash = digSig(privKey, dataHash)
 
 	return signedHash
 
@@ -89,9 +93,8 @@ def verifyFileSig(fileName, pubKey, signature):
 		fileContents = file.read()
 		dataHash = SHA512.new(fileContents).hexdigest()
 		sig = loadSig(signature)
-		key = loadKey(pubKey)
 		
-	return verifySig(dataHash, sig, key)
+	return verifySig(dataHash, sig, pubKey)
 
 ############################################
 # Saves the digital signature to a file
@@ -105,6 +108,7 @@ def saveSig(fileName, signature):
 	# Get the first value of the tuple, convert it
 	# to a string, and save it to the file (i.e., indicated
 	# by fileName)
+	print(len(str(signature[0])))
 	with open(fileName, "w") as file:
 		file.write(str(signature[0]))
 
@@ -145,14 +149,93 @@ def verifySig(theHash, sig, veriKey):
 	else:
 		print("No match!")
 
+def AES_keyCheck(key):
+	if len(key) == 32:
+		try:
+			aesKey = str(unhexlify(key))
+			return aesKey
+		except:
+			print("Error: Non-hexadecimal digit found")
+			exit(16)
+	else:
+		print("Error: Key length = {}, Key length must be 32 hex characters long" .format(len(key)))
+		exit(9001)
 
+def aesEncrypt(inputFileName, signature, key):
+	cipherText = ""
+	plainText = str(signature[0])
+	with open(inputFileName, "r") as file:
+		plainText += file.read()
+	
+	#Padding in format of: '\x03 \x03 \x03
+	padNum = 16 - len(plainText) % 16
+	while len(plainText) % 16 != 0:
+		plainText += chr(padNum) #Add padding character
+	
+	aes_cipher = AES.new(key, AES.MODE_ECB)
+	
+	for index in range(0, len(plainText), 16):
+			cipherText += aes_cipher.encrypt(plainText[index:index+16])
+	
+	dot = inputFileName.find(".")
+	if dot > -1:
+		outputFileName = inputFileName[0:dot] + "-encrypted" + inputFileName[dot:]
+	else:
+		outputFileName = inputFileName+"-encrypted"
+	with open(outputFileName, "w") as file:
+		file.write(cipherText)
+	
+	return outputFileName
+
+def aesDecrypt(inputFileName, key):
+	plainText = ""
+	cipherText = ""
+	with open(inputFileName, "r") as file:
+		cipherText += file.read()
+	
+	aes_cipher = AES.new(key, AES.MODE_ECB)
+	
+	for index in range(0, len(cipherText), 16):
+			plainText += aes_cipher.decrypt(cipherText[index:index+16])
+	
+	signature = int(plainText[0:617])
+	plainText = removePadding(plainText[617:])
+	
+	field = "-encrypted."
+	dot = inputFileName.find(field)
+	if dot > -1:
+		outputFileName = inputFileName[0:dot] + "-decrypted" + inputFileName[dot+len(field)-1:]
+	else:
+		outputFileName = inputFileName+"-decrypted"
+	with open(outputFileName, "w") as file:
+		file.write(plainText)
+	
+	return (outputFileName, (signature,))
+
+def removePadding(plainText):
+		padNum = ord(plainText[-1])
+		padChar = plainText[-1]
+		isPadding = False
+		if padNum > 0 and padNum < 16:
+			if padNum == 1 and plainText[-2] != padChar:
+				#If only one padding character
+				return plainText[:len(plainText)-1]
+			isPadding = True
+			for index in range(2, padNum):
+				if plainText[-index] != padChar:
+					isPadding = False
+		if isPadding:
+			return plainText[:len(plainText)-padNum]
+		return plainText
 
 # The main function
 def main():
 	
 	# Make sure that all the arguments have been provided
-	if len(sys.argv) != 5 and len(sys.argv) != 6:
-		print("USAGE: " + sys.argv[0] + " <KEY FILE NAME> <SIGNATURE FILE NAME> <INPUT FILE NAME>")
+	if len(sys.argv) != 5:
+		print("USAGE:  " + sys.argv[0] + " <KEY FILE NAME> <SIGNATURE FILE NAME> <INPUT FILE NAME> <sign/verify>")
+		print("OR\t" + sys.argv[0] +" <KEY FILE NAME> <AES KEY> <INPUT FILE NAME> <sign-enc/dec-verify>")
+		print("\nModes:\n\t- sign\n\t- sign-enc\n\t- verify\n\t- dec-verify")
 		exit(-1)
 	
 	# The key file
@@ -168,24 +251,40 @@ def main():
 	mode = sys.argv[4]
 
 	# TODO: Load the key using the loadKey() function provided.
-	
+	key = loadKey(keyFileName)
 	# We are signing
 	if mode == "sign":
 		# TODO: 1. Get the file signature
 		#       2. Save the signature to the file
-		sig = getFileSig(inputFileName, keyFileName)
+		sig = getFileSig(inputFileName, key)
 		saveSig(sigFileName, sig)
-		print ("Signature saved to file ", sigFileName)
-
+		print("Signature saved to file: {}" .format(sigFileName))
+	
+	elif mode == "sign-enc":
+		aesKey = AES_keyCheck(sys.argv[2].replace(" ", ""))
+		sig = getFileSig(inputFileName, key)
+		outFile = aesEncrypt(inputFileName, sig, aesKey)
+		print("Encrypted file saved to: {}" .format(outFile))
+		
 	# We are verifying the signature
 	elif mode == "verify":
 		
 		# TODO Use the verifyFileSig() function to check if the
 		# signature signature in the signature file matches the
 		# signature of the input file
-		verifyFileSig(inputFileName, keyFileName, sigFileName)
+		verifyFileSig(inputFileName, key, sigFileName)
+	
+	elif mode == "dec-verify":
+		aesKey = AES_keyCheck(sys.argv[2].replace(" ", ""))
+		(outFile, sig) = aesDecrypt(inputFileName, aesKey)
+		with open(outFile, "r") as file:
+			fileContents = file.read()
+			dataHash = SHA512.new(fileContents).hexdigest()
+			verifySig(dataHash, sig, key)
+		print("Decrypted file saved to: {}" .format(outFile))
+		
 	else:
-		print("Invalid mode ", mode)
+		print("Invalid mode: {}" .format(mode))
 
 ### Call the main function ####
 if __name__ == "__main__":
