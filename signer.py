@@ -108,7 +108,6 @@ def saveSig(fileName, signature):
 	# Get the first value of the tuple, convert it
 	# to a string, and save it to the file (i.e., indicated
 	# by fileName)
-	print(len(str(signature[0])))
 	with open(fileName, "w") as file:
 		file.write(str(signature[0]))
 
@@ -163,7 +162,7 @@ def AES_keyCheck(key):
 
 def aesEncrypt(inputFileName, signature, key):
 	cipherText = ""
-	plainText = str(signature[0])
+	plainText = b64encode(str(signature[0]))
 	with open(inputFileName, "r") as file:
 		plainText += file.read()
 	
@@ -198,8 +197,9 @@ def aesDecrypt(inputFileName, key):
 	for index in range(0, len(cipherText), 16):
 			plainText += aes_cipher.decrypt(cipherText[index:index+16])
 	
-	signature = int(plainText[0:617])
-	plainText = removePadding(plainText[617:])
+	signature = plainText[0:824]
+	signature = int(b64decode(signature))
+	plainText = removePadding(plainText[824:])
 	
 	field = "-encrypted."
 	dot = inputFileName.find(field)
