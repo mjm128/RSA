@@ -176,11 +176,7 @@ def aesEncrypt(inputFileName, signature, key):
 	for index in range(0, len(plainText), 16):
 			cipherText += aes_cipher.encrypt(plainText[index:index+16])
 	
-	dot = inputFileName.find(".")
-	if dot > -1:
-		outputFileName = inputFileName[0:dot] + "-encrypted" + inputFileName[dot:]
-	else:
-		outputFileName = inputFileName+"-encrypted"
+	outputFileName = "encrypted_" + inputFileName[:]
 	with open(outputFileName, "w") as file:
 		file.write(cipherText)
 	
@@ -194,19 +190,23 @@ def aesDecrypt(inputFileName, key):
 	
 	aes_cipher = AES.new(key, AES.MODE_ECB)
 	
-	for index in range(0, len(cipherText), 16):
-			plainText += aes_cipher.decrypt(cipherText[index:index+16])
+	try:
+		for index in range(0, len(cipherText), 16):
+				plainText += aes_cipher.decrypt(cipherText[index:index+16])
+	except ValueError:
+		print("ERROR: File is not a proper multiple of 16 bytes")
+		exit(666)
 	
 	signature = plainText[0:824]
 	signature = int(b64decode(signature))
 	plainText = removePadding(plainText[824:])
 	
-	field = "-encrypted."
-	dot = inputFileName.find(field)
-	if dot > -1:
-		outputFileName = inputFileName[0:dot] + "-decrypted" + inputFileName[dot+len(field)-1:]
+	field = "encrypted_"
+	start = inputFileName.find(field)
+	if start > -1:
+		outputFileName = "decrypted_" + inputFileName[start + len(field) : ]
 	else:
-		outputFileName = inputFileName+"-decrypted"
+		outputFileName = "decrypted_" + inputFileName
 	with open(outputFileName, "w") as file:
 		file.write(plainText)
 	
@@ -285,6 +285,8 @@ def main():
 		
 	else:
 		print("Invalid mode: {}" .format(mode))
+	
+	exit(0)
 
 ### Call the main function ####
 if __name__ == "__main__":
