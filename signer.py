@@ -162,7 +162,8 @@ def AES_keyCheck(key):
 
 def aesEncrypt(inputFileName, signature, key):
 	cipherText = ""
-	plainText = b64encode(str(signature[0]))
+	plainText = str(signature[0])
+	plainText = str(len(plainText)) + "==" + plainText 
 	with open(inputFileName, "r") as file:
 		plainText += file.read()
 	
@@ -195,11 +196,13 @@ def aesDecrypt(inputFileName, key):
 				plainText += aes_cipher.decrypt(cipherText[index:index+16])
 	except ValueError:
 		print("ERROR: File is not a proper multiple of 16 bytes")
+		print("Verify that file is the encrypted file")
 		exit(666)
 	
-	signature = plainText[0:824]
-	signature = int(b64decode(signature))
-	plainText = removePadding(plainText[824:])
+	sigLen = plainText.split("==")[0]
+	signature = plainText[len(sigLen) + len("==") : len(sigLen) + int(sigLen) + len("==")]
+	plainText = removePadding(plainText[len(sigLen) + len("==") + len(signature):])
+
 	
 	field = "encrypted_"
 	start = inputFileName.find(field)
@@ -210,7 +213,7 @@ def aesDecrypt(inputFileName, key):
 	with open(outputFileName, "w") as file:
 		file.write(plainText)
 	
-	return (outputFileName, (signature,))
+	return (outputFileName, (int(signature),))
 
 def removePadding(plainText):
 		padNum = ord(plainText[-1])
